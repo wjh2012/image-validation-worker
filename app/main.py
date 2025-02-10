@@ -1,46 +1,38 @@
-import time
+import threading
+from dotenv import load_dotenv
 
-import pika
+# 로그 및 연결 관련 모듈 가져오기
+from app.config.custom_logger import logger
+from app.config.minio_connection import MinioConnection
+from app.config.rabbitmq_connection import RabbitMQConnection
 
-from app.service.blank_detector import BlankDetector
+# 환경 변수 로드
+load_dotenv()
 
-RABBITMQ_URL = "amqp://admin:admin@localhost:5672"
+
+def process_message(msg):
+    logger.info(f"📩 Received message: {msg}")
 
 
-def callback(ch, method, properties, body, blank_detector):
-
-    time.sleep(10)
-    blank_detector.is_blank_image(body)
-
-    ch.basic_publish(exchange="", routing_key="result_queue", body="complete".encode())
-    ch.basic_ack(delivery_tag=method.delivery_tag)
+def start_rabbitmq():
+    try:
+        with RabbitMQConnection(auto_connect=True) as rabbitmq:
+            rabbitmq.consume_messages(callback=process_message)
+    except Exception as e:
+        logger.error(f"❌ RabbitMQ 소비 중 오류 발생: {e}")
 
 
 def main():
-    params = pika.URLParameters(RABBITMQ_URL)
-    connection = pika.BlockingConnection(parameters=params)
-    channel = connection.channel()
-
-    queue_name = "test"
-    channel.queue_declare(queue=queue_name, durable=True)
-    channel.basic_qos(prefetch_count=1)
-
-    blank_detector = BlankDetector()
-
-    channel.basic_consume(
-        queue=queue_name,
-        on_message_callback=lambda ch, method, properties, body: callback(
-            ch, method, properties, body, blank_detector
-        ),
-    )
-
     try:
-        channel.start_consuming()
-        print("consuming start...")
-    except KeyboardInterrupt:
-        channel.stop_consuming()
-        print("consuming stop...")
-    connection.close()
+        rabbitmq_thread = threading.Thread(target=start_rabbitmq, daemon=True)
+        rabbitmq_thread.start()
+
+        minio_client = MinioConnection()
+
+        rabbitmq_thread.join()
+
+    except Exception as ex:
+        logger.error(f"❌ 오류 발생: {ex}")
 
 
 if __name__ == "__main__":
