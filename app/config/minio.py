@@ -32,7 +32,7 @@ class MinioConnection:
         self.endpoint_url = f"http://{self.minio_host}:{self.minio_port}"
 
         # boto3 클라이언트
-        self.s3_client = None
+        self.minio_client = None
 
         if auto_connect:
             self.connect()
@@ -42,7 +42,7 @@ class MinioConnection:
     def connect(self):
         """MinIO 연결 시도 및 확인"""
         try:
-            self.s3_client = boto3.client(
+            self.minio_client = boto3.client(
                 "s3",
                 endpoint_url=self.endpoint_url,
                 aws_access_key_id=self.minio_username,
@@ -51,7 +51,7 @@ class MinioConnection:
             )
 
             # 🚀 연결 확인을 위해 버킷 목록을 조회
-            response = self.s3_client.list_buckets()
+            response = self.minio_client.list_buckets()
 
             if not isinstance(response, dict):
                 raise ValueError("MinIO에서 예상하지 못한 응답을 받음.")
@@ -59,25 +59,25 @@ class MinioConnection:
             logger.info(f"🚀 MinIO 연결 성공! ({self.endpoint_url})")
 
         except EndpointConnectionError:
-            self.s3_client = None
+            self.minio_client = None
             logger.error(
                 f"❌ MinIO 서버에 연결할 수 없습니다. (Endpoint: {self.endpoint_url})"
             )
         except NoCredentialsError:
-            self.s3_client = None
+            self.minio_client = None
             logger.error("❌ MinIO 인증 정보가 없습니다.")
         except Exception as e:
-            self.s3_client = None
+            self.minio_client = None
             logger.error(f"❌ MinIO 연결 실패: {e}")
 
     def list_buckets(self):
         """MinIO 버킷 리스트 조회 (연결 실패와 버킷 없음 구분)"""
-        if not self.s3_client:
+        if not self.minio_client:
             logger.error("❌ MinIO에 연결되지 않았습니다. 버킷 조회 불가!")
             return None  # 버킷 없음이 아니라 '연결 실패' 상태임을 명확히 함.
 
         try:
-            response = self.s3_client.list_buckets()
+            response = self.minio_client.list_buckets()
             bucket_list = [bucket["Name"] for bucket in response.get("Buckets", [])]
 
             if not bucket_list:
@@ -89,3 +89,6 @@ class MinioConnection:
         except Exception as e:
             logger.error(f"❌ 버킷 조회 실패: {e}")
             return None
+
+    def get_object(self, bucket_name, object_name):
+        return self.minio_client.get_object(bucket_name, object_name)

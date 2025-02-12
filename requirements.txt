@@ -3,6 +3,8 @@ opencv-python-headless
 deskew
 black
 shapely
+msgspec
+pillow
 
 pika
 boto3
