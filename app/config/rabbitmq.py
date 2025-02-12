@@ -76,7 +76,7 @@ class RabbitMQConnection:
 
         try:
             self.channel.queue_declare(queue=queue_name, durable=True)
-            logger.info(f"✅ Queue '{queue_name}' is ready")
+            logger.info(f"🚦Queue '{queue_name}' is ready")
         except Exception as e:
             logger.error(f"❌ 큐 선언 실패: {e}")
             raise
