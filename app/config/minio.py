@@ -35,11 +35,11 @@ class MinioConnection:
         self.minio_client = None
 
         if auto_connect:
-            self.connect()
+            self._connect()
 
         self._initialized = True
 
-    def connect(self):
+    def _connect(self):
         """MinIO 연결 시도 및 확인"""
         try:
             self.minio_client = boto3.client(
