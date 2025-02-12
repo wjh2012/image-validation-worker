@@ -43,8 +43,8 @@ def process_message(minio_client, msg):
 
 def main():
     minio_client = MinioConnection()
+    minio_client.list_buckets()
     rabbitmq_consumer = RabbitMQConnection(auto_connect=True)
-
     try:
         rabbitmq_consumer.consume_messages(
             callback=lambda msg: process_message(minio_client, msg)
