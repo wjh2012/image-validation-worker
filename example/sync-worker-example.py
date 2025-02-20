@@ -1,77 +1,89 @@
-import pika
+# -*- coding: utf-8 -*-
+# pylint: disable=C0111,C0103,R0205
+
+import functools
+import logging
+import threading
 import time
+import pika
+from pika.exchange_type import ExchangeType
 
-# RabbitMQ 연결 URL (기본값: localhost의 guest 계정)
-RABBITMQ_URL = "amqp://guest:guest@localhost/"
+LOG_FORMAT = (
+    "%(levelname) -10s %(asctime)s %(name) -30s %(funcName) "
+    "-35s %(lineno) -5d: %(message)s"
+)
+LOGGER = logging.getLogger(__name__)
+
+logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
 
 
-def process_image(zip_path: str) -> str:
+def ack_message(ch, delivery_tag):
+    """Note that `ch` must be the same pika channel instance via which
+    the message being ACKed was retrieved (AMQP protocol constraint).
     """
-    CPU 집약적인 이미지 처리 작업을 수행하는 함수입니다.
-    실제 로직으로 대체할 수 있으며, 여기서는 시간 지연을 통해 처리 과정을 시뮬레이션합니다.
-
-    :param zip_path: 이미지 zip 파일의 경로
-    :return: 처리 결과 문자열
-    """
-    print(f"[Processing] 이미지 파일 처리 시작: {zip_path}")
-    # 실제 이미지 처리 로직 대신 2초간 대기하여 처리 시간 시뮬레이션
-    time.sleep(2)
-    result = f"Processed: {zip_path}"
-    print(f"[Processing] 이미지 파일 처리 완료: {zip_path}")
-    return result
+    if ch.is_open:
+        ch.basic_ack(delivery_tag)
+    else:
+        # Channel is already closed, so we can't ACK this message;
+        # log and/or do something that makes sense for your app in this case.
+        pass
 
 
-def callback(ch, method, properties, body):
-    """
-    task_queue에서 메시지를 소비할 때 호출되는 콜백 함수입니다.
-    메시지를 받고 이미지 처리 작업을 수행한 후, 결과를 result_queue로 전송합니다.
-
-    :param ch: 채널 객체
-    :param method: 메시지 전달 정보
-    :param properties: 메시지 속성
-    :param body: 메시지 본문 (zip 파일 경로)
-    """
-    zip_path = body.decode()
-    print(f"[Received] 작업 요청 받음: {zip_path}")
-
-    # CPU 집약적인 이미지 처리 함수 호출
-    result = process_image(zip_path)
-
-    # 결과를 result_queue에 발행 (기본 익스체인지 사용)
-    ch.basic_publish(exchange="", routing_key="result_queue", body=result.encode())
-    print(f"[Sent] 처리 결과 전송: {result}")
-
-    # 메시지 처리 완료 후 Ack 전송하여 큐에서 제거
-    ch.basic_ack(delivery_tag=method.delivery_tag)
+def do_work(ch, delivery_tag, body):
+    thread_id = threading.get_ident()
+    LOGGER.info(
+        "Thread id: %s Delivery tag: %s Message body: %s", thread_id, delivery_tag, body
+    )
+    # Sleeping to simulate 10 seconds of work
+    time.sleep(10)
+    cb = functools.partial(ack_message, ch, delivery_tag)
+    ch.connection.add_callback_threadsafe(cb)
 
 
-def main():
-    """
-    RabbitMQ에 연결하고, task_queue에서 메시지를 소비하여 처리하는 메인 함수입니다.
-    """
-    # RabbitMQ 연결 설정
-    params = pika.URLParameters(RABBITMQ_URL)
-    connection = pika.BlockingConnection(params)
-    channel = connection.channel()
-
-    # 작업 큐와 결과 큐 선언 (존재하지 않으면 생성, durable 옵션으로 재시작 후에도 유지)
-    channel.queue_declare(queue="task_queue", durable=True)
-    channel.queue_declare(queue="result_queue", durable=True)
-
-    # 한 번에 하나의 메시지만 처리하도록 QoS 설정 (동시 처리 제한)
-    channel.basic_qos(prefetch_count=1)
-
-    # task_queue에서 메시지 소비 시작 (콜백 함수 지정)
-    channel.basic_consume(queue="task_queue", on_message_callback=callback)
-
-    print("[*] 메시지 대기 중. 종료하려면 CTRL+C를 누르세요.")
-    try:
-        channel.start_consuming()
-    except KeyboardInterrupt:
-        print("종료 신호 감지됨. 소비 중지...")
-        channel.stop_consuming()
-    connection.close()
+def on_message(ch, method_frame, _header_frame, body, args):
+    thrds = args
+    delivery_tag = method_frame.delivery_tag
+    t = threading.Thread(target=do_work, args=(ch, delivery_tag, body))
+    t.start()
+    thrds.append(t)
 
 
-if __name__ == "__main__":
-    main()
+credentials = pika.PlainCredentials("guest", "guest")
+# Note: sending a short heartbeat to prove that heartbeats are still
+# sent even though the worker simulates long-running work
+parameters = pika.ConnectionParameters(
+    "localhost", credentials=credentials, heartbeat=5
+)
+connection = pika.BlockingConnection(parameters)
+
+channel = connection.channel()
+channel.exchange_declare(
+    exchange="test_exchange",
+    exchange_type=ExchangeType.direct,
+    passive=False,
+    durable=True,
+    auto_delete=False,
+)
+channel.queue_declare(queue="standard", auto_delete=True)
+channel.queue_bind(
+    queue="standard", exchange="test_exchange", routing_key="standard_key"
+)
+# Note: prefetch is set to 1 here as an example only and to keep the number of threads created
+# to a reasonable amount. In production you will want to test with different prefetch values
+# to find which one provides the best performance and usability for your solution
+channel.basic_qos(prefetch_count=1)
+
+threads = []
+on_message_callback = functools.partial(on_message, args=(threads))
+channel.basic_consume(on_message_callback=on_message_callback, queue="standard")
+
+try:
+    channel.start_consuming()
+except KeyboardInterrupt:
+    channel.stop_consuming()
+
+# Wait for all to complete
+for thread in threads:
+    thread.join()
+
+connection.close()
