@@ -3,7 +3,7 @@ import pika
 import threading
 from pika.exceptions import AMQPConnectionError
 
-from app.config.custom_logger import logger
+from blocking_app.config.custom_logger import logger
 
 
 class RabbitMQConnection:
