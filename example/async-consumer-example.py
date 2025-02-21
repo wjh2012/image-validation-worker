@@ -433,7 +433,7 @@ class ReconnectingExampleConsumer(object):
 
 def main():
     logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
-    amqp_url = "amqp://guest:guest@localhost:5672/%2F"
+    amqp_url = "amqp://admin:admin@192.168.45.131:5672/%2F"
     consumer = ReconnectingExampleConsumer(amqp_url)
     consumer.run()
 

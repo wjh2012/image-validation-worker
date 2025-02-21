@@ -6,7 +6,7 @@ from pika.exceptions import AMQPConnectionError
 from blocking_app.config.custom_logger import logger
 
 
-class RabbitMQConnection:
+class BlockingConsumer:
     _instance = None
     _lock = threading.Lock()
 
