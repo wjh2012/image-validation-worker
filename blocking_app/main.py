@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from blocking_app.config.minio import MinioConnection
-from blocking_app.config.rabbitmq import RabbitMQConnection
+from blocking_app.config.blocking_rabbitmq import BlockingConsumer
 import json
 
 from blocking_app.config.custom_logger import logger
@@ -37,7 +37,7 @@ def process_message(minio_client, msg):
 def main():
     minio_client = MinioConnection()
     minio_client.list_buckets()
-    rabbitmq_consumer = RabbitMQConnection(auto_connect=True)
+    rabbitmq_consumer = BlockingConsumer(auto_connect=True)
     try:
         rabbitmq_consumer.consume_messages(
             callback=lambda msg: process_message(minio_client, msg)
