@@ -13,11 +13,11 @@ LOG_FORMAT = (
 LOGGER = logging.getLogger(__name__)
 
 
-class RabbitMQConsumer(object):
+class AsyncioConsumer(object):
     EXCHANGE = "image_exchanger"
     EXCHANGE_TYPE = ExchangeType.direct
     QUEUE = "image_validation"
-    ROUTING_KEY = "task_queue"
+    # ROUTING_KEY = "task_queue"
 
     def __init__(self, amqp_url):
         self.should_reconnect = False
@@ -100,17 +100,13 @@ class RabbitMQConsumer(object):
     def setup_queue(self, queue_name):
         LOGGER.info("Declaring queue %s", queue_name)
         cb = functools.partial(self.on_queue_declareok, userdata=queue_name)
-        self._channel.queue_declare(queue=queue_name, callback=cb)
+        self._channel.queue_declare(queue=queue_name, durable=True, callback=cb)
 
     def on_queue_declareok(self, _unused_frame, userdata):
         queue_name = userdata
-        LOGGER.info(
-            "Binding %s to %s with %s", self.EXCHANGE, queue_name, self.ROUTING_KEY
-        )
+        LOGGER.info("Binding %s to %s", self.EXCHANGE, queue_name)
         cb = functools.partial(self.on_bindok, userdata=queue_name)
-        self._channel.queue_bind(
-            queue_name, self.EXCHANGE, routing_key=self.ROUTING_KEY, callback=cb
-        )
+        self._channel.queue_bind(queue_name, self.EXCHANGE, callback=cb)
 
     def on_bindok(self, _unused_frame, userdata):
         LOGGER.info("Queue bound: %s", userdata)
@@ -187,11 +183,11 @@ class RabbitMQConsumer(object):
             LOGGER.info("Stopped")
 
 
-class RabbitMQConsumerWrapper(object):
+class AsyncioConsumerWrapper(object):
     def __init__(self, amqp_url):
         self._reconnect_delay = 0
         self._amqp_url = amqp_url
-        self._consumer = RabbitMQConsumer(self._amqp_url)
+        self._consumer = AsyncioConsumer(self._amqp_url)
 
     def run(self):
         while True:
@@ -208,7 +204,7 @@ class RabbitMQConsumerWrapper(object):
             reconnect_delay = self._get_reconnect_delay()
             LOGGER.info("Reconnecting after %d seconds", reconnect_delay)
             time.sleep(reconnect_delay)
-            self._consumer = RabbitMQConsumer(self._amqp_url)
+            self._consumer = AsyncioConsumer(self._amqp_url)
 
     def _get_reconnect_delay(self):
         if self._consumer.was_consuming:
@@ -223,7 +219,7 @@ class RabbitMQConsumerWrapper(object):
 def main():
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     amqp_url = "amqp://admin:admin@192.168.45.131:5672/%2F"
-    consumer = RabbitMQConsumerWrapper(amqp_url)
+    consumer = AsyncioConsumerWrapper(amqp_url)
     consumer.run()
 
 
