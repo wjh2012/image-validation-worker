@@ -4,7 +4,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import NoCredentialsError, EndpointConnectionError
 
-from blocking_app.config.custom_logger import logger
+from app_old.config.custom_logger import logger
 
 
 class MinioConnection:

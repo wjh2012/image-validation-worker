@@ -1,9 +1,9 @@
 from dotenv import load_dotenv
-from blocking_app.config.minio import MinioConnection
-from blocking_app.config.blocking_rabbitmq import BlockingConsumer
 import json
 
-from blocking_app.config.custom_logger import logger
+from app_old.config.blocking_rabbitmq import BlockingConsumer
+from app_old.config.custom_logger import logger
+from app_old.config.minio import MinioConnection
 
 load_dotenv()
 

@@ -3,7 +3,7 @@ import pika
 import threading
 from pika.exceptions import AMQPConnectionError
 
-from blocking_app.config.custom_logger import logger
+from app_old.config.custom_logger import logger
 
 
 class BlockingConsumer:

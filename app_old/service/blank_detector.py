@@ -1,5 +1,6 @@
 import numpy as np
-from app.service.utils.gray_filter import gray_filter_np
+
+from app_old.service.utils.gray_filter import gray_filter_np
 
 
 class BlankDetector:
