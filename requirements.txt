@@ -6,6 +6,7 @@ shapely
 msgspec
 pillow
 
+aio-pika
 pika
 boto3
 

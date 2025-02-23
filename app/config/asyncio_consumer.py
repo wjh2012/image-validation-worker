@@ -29,7 +29,7 @@ class AsyncioConsumer(object):
         self._consumer_tag = None
         self._url = amqp_url
         self._consuming = False
-        self._prefetch_count = 1
+        self._prefetch_count = 2
 
     def connect(self):
         LOGGER.info("Connecting to %s", self._url)
@@ -144,6 +144,7 @@ class AsyncioConsumer(object):
             properties.app_id,
             body,
         )
+        time.sleep(5)
         self.acknowledge_message(basic_deliver.delivery_tag)
 
     def acknowledge_message(self, delivery_tag):
