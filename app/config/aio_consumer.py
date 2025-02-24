@@ -1,35 +1,42 @@
-import asyncio
-import logging
-
 import aio_pika
+import logging
 from aio_pika.abc import AbstractIncomingMessage
 
-
-async def on_message(message: AbstractIncomingMessage) -> None:
-    async with message.process():
-        print("get message")
-        await asyncio.sleep(5)
-        print(f"Message body is: {message.body!r}")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
-async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    connection = await aio_pika.connect_robust(
-        "amqp://admin:admin@192.168.45.131/",
-    )
+class AioConsumer:
+    def __init__(self, amqp_url: str, queue_name: str, prefetch_count: int = 2):
+        self.amqp_url = amqp_url
+        self.queue_name = queue_name
+        self.prefetch_count = prefetch_count
+        self._connection = None
+        self._channel = None
+        self._queue = None
 
-    queue_name = "image_validation"
+    async def connect(self):
+        self._connection = await aio_pika.connect_robust(self.amqp_url)
+        self._channel = await self._connection.channel()
+        await self._channel.set_qos(prefetch_count=self.prefetch_count)
 
-    async with connection:
-        channel = await connection.channel()
+        self._queue = await self._channel.declare_queue(self.queue_name, durable=True)
+        logging.info(f"✅ RabbitMQ 연결 성공: {self.amqp_url}, 큐: {self.queue_name}")
 
-        await channel.set_qos(prefetch_count=2)
-        queue = await channel.declare_queue(queue_name, durable=True)
-        await queue.consume(on_message, no_ack=False)
+    async def on_message(self, message: AbstractIncomingMessage) -> None:
+        async with message.process():
+            logging.info("📩 메시지 수신!")
+            logging.info(f"📨 메시지 내용: {message.body.decode()}")
 
-        print(" [*] Waiting for messages. To exit press CTRL+C")
-        await asyncio.Future()
+    async def consume(self):
+        if not self._queue:
+            await self.connect()
 
+        logging.info(f"📡 큐({self.queue_name})에서 메시지 소비 시작...")
+        await self._queue.consume(self.on_message, no_ack=False)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    async def close(self):
+        if self._connection:
+            await self._connection.close()
+            logging.info("🔴 RabbitMQ 연결 종료")

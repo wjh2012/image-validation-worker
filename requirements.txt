@@ -6,8 +6,9 @@ shapely
 msgspec
 pillow
 
-aio-pika
 pika
 boto3
+aio-pika
+aioboto3
 
 python-dotenv
