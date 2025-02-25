@@ -1,6 +1,11 @@
+import io
+import json
+
 import aio_pika
 import logging
 from aio_pika.abc import AbstractIncomingMessage
+
+from app.config.aio_boto import AioBoto
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -8,10 +13,17 @@ logging.basicConfig(
 
 
 class AioConsumer:
-    def __init__(self, amqp_url: str, queue_name: str, prefetch_count: int = 2):
+    def __init__(
+        self,
+        minio_manager: AioBoto,
+        amqp_url: str,
+        queue_name: str,
+        prefetch_count: int = 2,
+    ):
         self.amqp_url = amqp_url
         self.queue_name = queue_name
         self.prefetch_count = prefetch_count
+        self.minio_manager = minio_manager
         self._connection = None
         self._channel = None
         self._queue = None
@@ -27,7 +39,17 @@ class AioConsumer:
     async def on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process():
             logging.info("📩 메시지 수신!")
-            logging.info(f"📨 메시지 내용: {message.body.decode()}")
+            data = json.loads(message.body)
+            file_name = data["file_name"]
+            bucket_name = data["bucket"]
+
+            file_obj = io.BytesIO()
+            await self.minio_manager.download_image_with_client(
+                bucket_name=bucket_name, key=file_name, file_obj=file_obj
+            )
+            file_length = file_obj.getbuffer().nbytes
+            file_obj.close()
+            logging.info(f"✅ MinIO 파일 다운로드 성공: Size: {file_length} bytes")
 
     async def consume(self):
         if not self._queue:
