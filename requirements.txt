@@ -10,5 +10,5 @@ pika
 boto3
 aio-pika
 aioboto3
-
+SQLAlchemy
 python-dotenv
