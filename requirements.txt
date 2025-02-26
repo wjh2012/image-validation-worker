@@ -11,4 +11,5 @@ boto3
 aio-pika
 aioboto3
 SQLAlchemy
+alembic
 python-dotenv
