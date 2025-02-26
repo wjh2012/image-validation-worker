@@ -5,8 +5,8 @@ class Base(DeclarativeBase):
     pass
 
 
-class ImageValidation(Base):
-    __tablename__ = "image_validation"
+class ImageValidationResult(Base):
+    __tablename__ = "image_validation_result"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     is_blank: Mapped[bool] = mapped_column(default=False)
@@ -14,4 +14,4 @@ class ImageValidation(Base):
     tilt_angle: Mapped[float] = mapped_column(default=0)
 
     def __repr__(self) -> str:
-        return f"User(id={self.id!r}, is_blank={self.is_blank!r}, is_folded={self.is_folded!r}, tilt_angle={self.tilt_angle!r})"
+        return f"ImageValidationResult(id={self.id!r}, is_blank={self.is_blank!r}, is_folded={self.is_folded!r}, tilt_angle={self.tilt_angle!r})"
