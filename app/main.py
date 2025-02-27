@@ -1,17 +1,28 @@
-import asyncio
 import os
+
+import asyncio
 
 from app.config.aio_boto import AioBoto
 from app.config.aio_consumer import AioConsumer
 
-minio_host = os.getenv("MINIO_HOST", "192.168.45.131")
-minio_port = int(os.getenv("MINIO_PORT", 9000))
 
-rabbitmq_host = os.getenv("RABBITMQ_HOST", "192.168.45.131")
-rabbitmq_port = int(os.getenv("RABBITMQ_PORT", 5672))
-rabbitmq_user = os.getenv("RABBITMQ_USER", "admin")
-rabbitmq_password = os.getenv("RABBITMQ_PASSWORD", "admin")
-rabbitmq_consume_queue = os.getenv("RABBITMQ_CONSUME_QUEUE", "image_validation")
+from dotenv import load_dotenv
+
+load_dotenv()
+
+minio_host = os.getenv("MINIO_HOST")
+minio_port = os.getenv("MINIO_PORT")
+rabbitmq_host = os.getenv("RABBITMQ_HOST")
+rabbitmq_port = os.getenv("RABBITMQ_PORT")
+rabbitmq_user = os.getenv("RABBITMQ_USER")
+rabbitmq_password = os.getenv("RABBITMQ_PASSWORD")
+rabbitmq_consume_queue = os.getenv("RABBITMQ_CONSUME_QUEUE")
+
+if not minio_host or not minio_port:
+    raise ValueError("MINIO_HOST 또는 MINIO_PORT 환경 변수가 설정되지 않았습니다.")
+
+if not rabbitmq_host or not rabbitmq_port or not rabbitmq_user or not rabbitmq_password:
+    raise ValueError("RabbitMQ 환경 변수가 올바르게 설정되지 않았습니다.")
 
 
 async def main():
