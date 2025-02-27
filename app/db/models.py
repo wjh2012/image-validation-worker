@@ -1,4 +1,8 @@
+import uuid
+
+from sqlalchemy import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from uuid_extensions import uuid7
 
 
 class Base(DeclarativeBase):
@@ -8,7 +12,9 @@ class Base(DeclarativeBase):
 class ImageValidationResult(Base):
     __tablename__ = "image_validation_result"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
     is_blank: Mapped[bool] = mapped_column(default=False)
     is_folded: Mapped[bool] = mapped_column(default=False)
     tilt_angle: Mapped[float] = mapped_column(default=0)
