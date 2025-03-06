@@ -2,8 +2,8 @@ import os
 
 import asyncio
 
-from app.config.aio_boto import AioBoto
-from app.config.aio_consumer import AioConsumer
+from app.storage.aio_boto import AioBoto
+from app.storage.aio_consumer import AioConsumer
 
 
 from dotenv import load_dotenv

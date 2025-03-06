@@ -5,7 +5,7 @@ import aio_pika
 import logging
 from aio_pika.abc import AbstractIncomingMessage
 
-from app.config.aio_boto import AioBoto
+from app.storage.aio_boto import AioBoto
 from app.db.database import AsyncSessionLocal
 from app.db.models import ImageValidationResult
 
