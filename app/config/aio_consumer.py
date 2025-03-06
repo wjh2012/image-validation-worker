@@ -6,6 +6,8 @@ import logging
 from aio_pika.abc import AbstractIncomingMessage
 
 from app.config.aio_boto import AioBoto
+from app.db.database import AsyncSessionLocal
+from app.db.models import ImageValidationResult
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -39,6 +41,7 @@ class AioConsumer:
     async def on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process():
             logging.info("📩 메시지 수신!")
+
             data = json.loads(message.body)
             file_name = data["file_name"]
             bucket_name = data["bucket"]
@@ -48,8 +51,17 @@ class AioConsumer:
                 bucket_name=bucket_name, key=file_name, file_obj=file_obj
             )
             file_length = file_obj.getbuffer().nbytes
-            file_obj.close()
             logging.info(f"✅ MinIO 파일 다운로드 성공: Size: {file_length} bytes")
+
+            file_obj.close()
+
+            async with AsyncSessionLocal() as session:
+                validation_result = ImageValidationResult(
+                    is_blank=False, is_folded=False, tilt_angle=0.1
+                )
+                session.add(validation_result)
+                await session.commit()
+                logging.info("✅ DB에 다운로드 정보 저장 완료")
 
     async def consume(self):
         if not self._queue:
