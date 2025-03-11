@@ -3,8 +3,12 @@ import json
 
 import aio_pika
 import logging
+
+import numpy as np
+from PIL import Image
 from aio_pika.abc import AbstractIncomingMessage
 
+from app.service.blank_detector import BlankDetector
 from app.storage.aio_boto import AioBoto
 from app.db.database import AsyncSessionLocal
 from app.db.models import ImageValidationResult
@@ -29,6 +33,9 @@ class AioConsumer:
         self._connection = None
         self._channel = None
         self._queue = None
+        self.blank_detector = BlankDetector(
+            bin_threshold=150, blank_threshold_ratio=0.99999
+        )
 
     async def connect(self):
         self._connection = await aio_pika.connect_robust(self.amqp_url)
@@ -39,10 +46,11 @@ class AioConsumer:
         logging.info(f"✅ RabbitMQ 연결 성공: {self.amqp_url}, 큐: {self.queue_name}")
 
     async def on_message(self, message: AbstractIncomingMessage) -> None:
-        async with message.process():
+        async with message.process(ignore_processed=True):
             logging.info("📩 메시지 수신!")
 
             data = json.loads(message.body)
+            gid = data["gid"]
             file_name = data["file_name"]
             bucket_name = data["bucket"]
 
@@ -53,11 +61,23 @@ class AioConsumer:
             file_length = file_obj.getbuffer().nbytes
             logging.info(f"✅ MinIO 파일 다운로드 성공: Size: {file_length} bytes")
 
+            file_obj.seek(0)
+
+            try:
+                image = Image.open(file_obj)
+                image_np = np.array(image)
+            except Exception as e:
+                logging.error(f"이미지 변환 실패: {e}")
+                file_obj.close()
+                return
+
+            is_blank = self.blank_detector.is_blank_image(image_np)
+
             file_obj.close()
 
             async with AsyncSessionLocal() as session:
                 validation_result = ImageValidationResult(
-                    is_blank=False, is_folded=False, tilt_angle=0.1
+                    is_blank=is_blank, is_folded=False, tilt_angle=0.1
                 )
                 session.add(validation_result)
                 await session.commit()
