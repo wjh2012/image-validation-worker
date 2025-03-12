@@ -1,5 +1,6 @@
 import io
 import json
+import uuid
 
 import aio_pika
 import logging
@@ -24,7 +25,7 @@ class AioConsumer:
         minio_manager: AioBoto,
         amqp_url: str,
         queue_name: str,
-        prefetch_count: int = 2,
+        prefetch_count: int = 1,
     ):
         self.amqp_url = amqp_url
         self.queue_name = queue_name
@@ -33,6 +34,8 @@ class AioConsumer:
         self._connection = None
         self._channel = None
         self._queue = None
+        self._dlx = None
+        self._dlq = None
         self.blank_detector = BlankDetector(
             bin_threshold=150, blank_threshold_ratio=0.99999
         )
@@ -42,17 +45,37 @@ class AioConsumer:
         self._channel = await self._connection.channel()
         await self._channel.set_qos(prefetch_count=self.prefetch_count)
 
-        self._queue = await self._channel.declare_queue(self.queue_name, durable=True)
+        self._dlx = await self._channel.declare_exchange(
+            "dead_letter_exchange", aio_pika.ExchangeType.DIRECT
+        )
+        self._dlq = await self._channel.declare_queue("dead_letter_queue")
+        await self._dlq.bind(self._dlx, routing_key="dead_letter")
+
+        args = {
+            "x-dead-letter-exchange": "dead_letter_exchange",
+            "x-dead-letter-routing-key": "dead_letter",
+            "x-message-ttl": 10000,  # 10초
+        }
+
+        self._queue = await self._channel.declare_queue(
+            self.queue_name, durable=True, arguments=args
+        )
         logging.info(f"✅ RabbitMQ 연결 성공: {self.amqp_url}, 큐: {self.queue_name}")
 
     async def on_message(self, message: AbstractIncomingMessage) -> None:
-        async with message.process(ignore_processed=True):
+        async with message.process(requeue=True):
             logging.info("📩 메시지 수신!")
 
             data = json.loads(message.body)
             gid = data["gid"]
             file_name = data["file_name"]
             bucket_name = data["bucket"]
+
+            try:
+                gid = uuid.UUID(gid)
+            except ValueError:
+                logging.error(f"❌ 유효하지 않은 UUID 형식: {gid}")
+                return
 
             file_obj = io.BytesIO()
             await self.minio_manager.download_image_with_client(
@@ -72,12 +95,11 @@ class AioConsumer:
                 return
 
             is_blank = self.blank_detector.is_blank_image(image_np)
-
             file_obj.close()
 
             async with AsyncSessionLocal() as session:
                 validation_result = ImageValidationResult(
-                    is_blank=is_blank, is_folded=False, tilt_angle=0.1
+                    gid=gid, is_blank=is_blank, is_folded=False, tilt_angle=0.1
                 )
                 session.add(validation_result)
                 await session.commit()
