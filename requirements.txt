@@ -13,3 +13,4 @@ aioboto3
 SQLAlchemy
 alembic
 python-dotenv
+motor
