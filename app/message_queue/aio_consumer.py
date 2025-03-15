@@ -9,7 +9,6 @@ import numpy as np
 from PIL import Image
 from aio_pika.abc import AbstractIncomingMessage
 
-from app.db.mongo import mongo_client, mongo_collection
 from app.service.blank_detector import BlankDetector
 from app.storage.aio_boto import AioBoto
 from app.db.database import AsyncSessionLocal
@@ -105,17 +104,6 @@ class AioConsumer:
                 session.add(validation_result)
                 await session.commit()
                 logging.info("✅ DB에 정보 저장 완료")
-
-            session = await mongo_client.start_session()
-            async with session:
-                async with session.start_transaction():  # 트랜잭션 시작
-                    await mongo_collection.insert_one(
-                        {"name": "Alice", "age": 25}, session=session
-                    )
-                    await mongo_collection.insert_one(
-                        {"name": "Bob", "age": 30}, session=session
-                    )
-                    logging.info("✅ nosql에 정보 저장 완료")
 
     async def consume(self):
         if not self._queue:
