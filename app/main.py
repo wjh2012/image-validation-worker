@@ -2,11 +2,15 @@ import os
 
 import asyncio
 
+import pytz
+
 from app.storage.aio_boto import AioBoto
 from app.message_queue.aio_consumer import AioConsumer
 
 
 from dotenv import load_dotenv
+
+KST = pytz.timezone("Asia/Seoul")
 
 load_dotenv()
 

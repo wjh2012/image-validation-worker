@@ -1,6 +1,7 @@
 import io
 import json
 import uuid
+from datetime import datetime
 
 import aio_pika
 import logging
@@ -64,6 +65,7 @@ class AioConsumer:
 
     async def on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process(requeue=True):
+            message_received_time = datetime.now()
             logging.info("📩 메시지 수신!")
 
             data = json.loads(message.body)
@@ -81,6 +83,8 @@ class AioConsumer:
             await self.minio_manager.download_image_with_client(
                 bucket_name=bucket_name, key=file_name, file_obj=file_obj
             )
+            file_received_time = datetime.now()
+
             file_length = file_obj.getbuffer().nbytes
             logging.info(f"✅ MinIO 파일 다운로드 성공: Size: {file_length} bytes")
 
@@ -98,8 +102,15 @@ class AioConsumer:
             file_obj.close()
 
             async with AsyncSessionLocal() as session:
+                created_time = datetime.now()
                 validation_result = ImageValidationResult(
-                    gid=gid, is_blank=is_blank, is_folded=False, tilt_angle=0.1
+                    gid=gid,
+                    is_blank=is_blank,
+                    is_folded=False,
+                    tilt_angle=0.1,
+                    message_received_time=message_received_time,
+                    file_received_time=file_received_time,
+                    created_time=created_time,
                 )
                 session.add(validation_result)
                 await session.commit()

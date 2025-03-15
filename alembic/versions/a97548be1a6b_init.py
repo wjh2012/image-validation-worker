@@ -1,8 +1,8 @@
-"""init
+"""Init
 
-Revision ID: 78d1f7eac793
+Revision ID: a97548be1a6b
 Revises: 
-Create Date: 2025-03-11 23:14:26.073098
+Create Date: 2025-03-15 20:52:45.314754
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '78d1f7eac793'
+revision: str = 'a97548be1a6b'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -26,6 +26,9 @@ def upgrade() -> None:
     sa.Column('is_folded', sa.Boolean(), nullable=False),
     sa.Column('tilt_angle', sa.Float(), nullable=False),
     sa.Column('gid', sa.Uuid(), nullable=False),
+    sa.Column('message_received_time', sa.DateTime(), nullable=False),
+    sa.Column('file_received_time', sa.DateTime(), nullable=False),
+    sa.Column('created_time', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     # ### end Alembic commands ###
