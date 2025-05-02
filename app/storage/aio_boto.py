@@ -2,11 +2,14 @@ import io
 import os
 import aioboto3
 from app.config.custom_logger import time_logger
+from app.config.env_config import get_settings
+
+config = get_settings()
 
 
 class AioBoto:
-    def __init__(self, minio_url: str):
-        self.minio_url = minio_url
+    def __init__(self):
+        self.minio_url = f"http://{config.minio_host}:{config.minio_port}"
         self._session = None
         self.s3_client_cm = None
         self.s3_client = None

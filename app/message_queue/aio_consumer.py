@@ -10,10 +10,13 @@ import numpy as np
 from PIL import Image
 from aio_pika.abc import AbstractIncomingMessage
 
-from app.service.blank_detector import BlankDetector
+from app.config.env_config import get_settings
+from app.service.validation_service import ValidationService
 from app.storage.aio_boto import AioBoto
 from app.db.database import AsyncSessionLocal
 from app.db.models import ImageValidationResult
+
+config = get_settings()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -24,43 +27,53 @@ class AioConsumer:
     def __init__(
         self,
         minio_manager: AioBoto,
-        amqp_url: str,
-        queue_name: str,
-        prefetch_count: int = 1,
+        validation_service: ValidationService,
     ):
-        self.amqp_url = amqp_url
-        self.queue_name = queue_name
-        self.prefetch_count = prefetch_count
         self.minio_manager = minio_manager
+        self.validation_service = validation_service
+
+        self.amqp_url = f"amqp://{config.rabbitmq_user}:{config.rabbitmq_password}@{config.rabbitmq_host}:{config.rabbitmq_port}/"
+
+        self.exchange_name = config.rabbitmq_image_validation_consume_exchange
+        self.queue_name = config.rabbitmq_image_validation_consume_queue
+        self.routing_key = config.rabbitmq_image_validation_consume_routing_key
+
+        self.prefetch_count = 1
+
+        self.dlx_name = config.rabbitmq_image_validation_dlx
+        self.dlx_routing_key = config.rabbitmq_image_validation_dlx_routing_key
+
         self._connection = None
         self._channel = None
+
+        self._exchange = None
         self._queue = None
+
         self._dlx = None
         self._dlq = None
-        self.blank_detector = BlankDetector(
-            bin_threshold=150, blank_threshold_ratio=0.99999
-        )
 
     async def connect(self):
         self._connection = await aio_pika.connect_robust(self.amqp_url)
         self._channel = await self._connection.channel()
+
         await self._channel.set_qos(prefetch_count=self.prefetch_count)
 
+        self._exchange = await self._channel.get_exchange(self.exchange_name)
+
         self._dlx = await self._channel.declare_exchange(
-            "dead_letter_exchange", aio_pika.ExchangeType.DIRECT
+            self.dlx_name, aio_pika.ExchangeType.DIRECT
         )
-        self._dlq = await self._channel.declare_queue("dead_letter_queue")
-        await self._dlq.bind(self._dlx, routing_key="dead_letter")
 
         args = {
-            "x-dead-letter-exchange": "dead_letter_exchange",
-            "x-dead-letter-routing-key": "dead_letter",
+            "x-dead-letter-exchange": self.dlx_name,
+            "x-dead-letter-routing-key": self.dlx_routing_key,
             "x-message-ttl": 10000,  # 10초
         }
 
         self._queue = await self._channel.declare_queue(
             self.queue_name, durable=True, arguments=args
         )
+        await self._queue.bind(self._exchange, routing_key=self.routing_key)
         logging.info(f"✅ RabbitMQ 연결 성공: {self.amqp_url}, 큐: {self.queue_name}")
 
     async def on_message(self, message: AbstractIncomingMessage) -> None:
@@ -98,14 +111,15 @@ class AioConsumer:
                 file_obj.close()
                 return
 
-            is_blank = self.blank_detector.is_blank_image(image_np)
+            result = self.validation_service.validate(image_np)
+
             file_obj.close()
 
             async with AsyncSessionLocal() as session:
                 created_time = datetime.now()
                 validation_result = ImageValidationResult(
                     gid=gid,
-                    is_blank=is_blank,
+                    is_blank=result.is_blank,
                     is_folded=False,
                     tilt_angle=0.1,
                     message_received_time=message_received_time,

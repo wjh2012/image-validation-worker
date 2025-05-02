@@ -11,8 +11,11 @@ boto3
 aio-pika
 aioboto3
 SQLAlchemy
+aiosqlite
 alembic
 python-dotenv
+pydantic-settings
 
 uuid7
 pytz
+
