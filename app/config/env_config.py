@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     rabbitmq_image_validation_consume_queue: str
     rabbitmq_image_validation_consume_routing_key: str
 
+    rabbitmq_image_validation_publish_exchange: str
+    rabbitmq_image_validation_publish_routing_key: str
+
     rabbitmq_image_validation_dlx: str
     rabbitmq_image_validation_dlx_routing_key: str
 

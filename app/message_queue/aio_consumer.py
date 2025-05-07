@@ -1,6 +1,7 @@
 import io
 import json
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 
 import aio_pika
@@ -34,9 +35,12 @@ class AioConsumer:
 
         self.amqp_url = f"amqp://{config.rabbitmq_user}:{config.rabbitmq_password}@{config.rabbitmq_host}:{config.rabbitmq_port}/"
 
-        self.exchange_name = config.rabbitmq_image_validation_consume_exchange
-        self.queue_name = config.rabbitmq_image_validation_consume_queue
-        self.routing_key = config.rabbitmq_image_validation_consume_routing_key
+        self.consume_exchange_name = config.rabbitmq_image_validation_consume_exchange
+        self.consume_queue_name = config.rabbitmq_image_validation_consume_queue
+        self.consume_routing_key = config.rabbitmq_image_validation_consume_routing_key
+
+        self.publish_exchange_name = config.rabbitmq_image_validation_publish_exchange
+        self.publish_routing_key = config.rabbitmq_image_validation_publish_routing_key
 
         self.prefetch_count = 1
 
@@ -46,8 +50,10 @@ class AioConsumer:
         self._connection = None
         self._channel = None
 
-        self._exchange = None
-        self._queue = None
+        self._consume_exchange = None
+        self._consume_queue = None
+
+        self._publish_exchange = None
 
         self._dlx = None
         self._dlq = None
@@ -58,7 +64,12 @@ class AioConsumer:
 
         await self._channel.set_qos(prefetch_count=self.prefetch_count)
 
-        self._exchange = await self._channel.get_exchange(self.exchange_name)
+        self._publish_exchange = await self._channel.declare_exchange(
+            self.publish_exchange_name, aio_pika.ExchangeType.DIRECT, durable=True
+        )
+        self._consume_exchange = await self._channel.get_exchange(
+            self.consume_exchange_name
+        )
 
         self._dlx = await self._channel.declare_exchange(
             self.dlx_name, aio_pika.ExchangeType.DIRECT
@@ -70,11 +81,15 @@ class AioConsumer:
             "x-message-ttl": 10000,  # 10초
         }
 
-        self._queue = await self._channel.declare_queue(
-            self.queue_name, durable=True, arguments=args
+        self._consume_queue = await self._channel.declare_queue(
+            self.consume_queue_name, durable=True, arguments=args
         )
-        await self._queue.bind(self._exchange, routing_key=self.routing_key)
-        logging.info(f"✅ RabbitMQ 연결 성공: {self.amqp_url}, 큐: {self.queue_name}")
+        await self._consume_queue.bind(
+            self._consume_exchange, routing_key=self.consume_routing_key
+        )
+        logging.info(
+            f"✅ RabbitMQ 연결 성공: {self.amqp_url}, 큐: {self.consume_queue_name}"
+        )
 
     async def on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process(requeue=True):
@@ -111,31 +126,54 @@ class AioConsumer:
                 file_obj.close()
                 return
 
-            result = self.validation_service.validate(image_np)
-
+            validation_result = self.validation_service.validate(image_np)
+            created_time = datetime.now()
             file_obj.close()
 
-            async with AsyncSessionLocal() as session:
-                created_time = datetime.now()
-                validation_result = ImageValidationResult(
-                    gid=gid,
-                    is_blank=result.is_blank,
-                    is_folded=False,
-                    tilt_angle=0.1,
-                    message_received_time=message_received_time,
-                    file_received_time=file_received_time,
-                    created_time=created_time,
+            try:
+                async with AsyncSessionLocal() as session:
+                    created_time = datetime.now()
+                    validation_result_orm = ImageValidationResult(
+                        gid=gid,
+                        is_blank=validation_result.is_blank,
+                        is_folded=False,
+                        tilt_angle=0.1,
+                        message_received_time=message_received_time,
+                        file_received_time=file_received_time,
+                        created_time=created_time,
+                    )
+                    session.add(validation_result_orm)
+                    await session.commit()
+                    logging.info("✅ DB에 정보 저장 완료")
+
+                await self.publish_message(
+                    message_body={
+                        "gid": str(gid),
+                        "status": "completed",
+                        "validation_result": asdict(validation_result),
+                        "created_time": str(created_time),
+                    },
                 )
-                session.add(validation_result)
-                await session.commit()
-                logging.info("✅ DB에 정보 저장 완료")
+            except Exception as e:
+                logging.error(f"저장 실패: {e}")
+
+    async def publish_message(self, message_body: dict):
+        await self._publish_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(message_body).encode(),
+                content_type="application/json",
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ),
+            routing_key=self.publish_routing_key,
+        )
+        logging.info(f"📤 메시지 발행 완료: {self.publish_routing_key}")
 
     async def consume(self):
-        if not self._queue:
+        if not self._consume_queue:
             await self.connect()
 
-        logging.info(f"📡 큐({self.queue_name})에서 메시지 소비 시작...")
-        await self._queue.consume(self.on_message, no_ack=False)
+        logging.info(f"📡 큐({self.consume_queue_name})에서 메시지 소비 시작...")
+        await self._consume_queue.consume(self.on_message, no_ack=False)
 
     async def close(self):
         if self._connection:
