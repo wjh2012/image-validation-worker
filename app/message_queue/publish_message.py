@@ -16,4 +16,4 @@ class PublishMessagePayload:
     gid: str
     status: str
     completed_at: str
-    validation_result: any
+    validation_results: any
