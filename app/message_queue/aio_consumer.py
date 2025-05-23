@@ -2,7 +2,7 @@ import io
 import json
 import uuid
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aio_pika
 import logging
@@ -10,8 +10,14 @@ import logging
 import numpy as np
 from PIL import Image
 from aio_pika.abc import AbstractIncomingMessage
+from uuid_extensions import uuid7str
 
 from app.config.env_config import get_settings
+from app.message_queue.consume_message import parse_message
+from app.message_queue.publish_message import (
+    PublishMessagePayload,
+    PublishMessageHeader,
+)
 from app.service.validation_service import ValidationService
 from app.storage.aio_boto import AioBoto
 from app.db.database import AsyncSessionLocal
@@ -93,48 +99,53 @@ class AioConsumer:
 
     async def on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process(requeue=True):
-            message_received_time = datetime.now()
+            message_received_time = datetime.now(timezone.utc)
             logging.info("📩 메시지 수신!")
 
-            data = json.loads(message.body)
-            gid = data["gid"]
-            file_name = data["file_name"]
-            bucket_name = data["bucket"]
-
-            try:
-                gid = uuid.UUID(gid)
-            except ValueError:
-                logging.error(f"❌ 유효하지 않은 UUID 형식: {gid}")
+            header, payload = parse_message(message)
+            if not header or not payload:
+                logging.warning("⚠️ 메시지 파싱 실패로 인해 처리를 중단합니다.")
                 return
+
+            gid = payload.gid
+            original_object_key = payload.original_object_key
+            download_bucket_name = payload.bucket
+
+            logging.info(
+                f"✅ 메시지 파싱 완료 - GID: {gid}, Bucket: {download_bucket_name}"
+            )
 
             file_obj = io.BytesIO()
-            await self.minio_manager.download_image_with_client(
-                bucket_name=bucket_name, key=file_name, file_obj=file_obj
-            )
-            file_received_time = datetime.now()
-
-            file_length = file_obj.getbuffer().nbytes
-            logging.info(f"✅ MinIO 파일 다운로드 성공: Size: {file_length} bytes")
-
-            file_obj.seek(0)
 
             try:
+                await self.minio_manager.download_image_with_client(
+                    bucket_name=download_bucket_name,
+                    key=original_object_key,
+                    file_obj=file_obj,
+                )
+                file_received_time = datetime.now(timezone.utc)
+                file_length = file_obj.getbuffer().nbytes
+
+                logging.info(f"✅ MinIO 파일 다운로드 성공: Size: {file_length} bytes")
+
+                file_obj.seek(0)
                 image = Image.open(file_obj)
-                image_np = np.array(image)
+                image.verify()
+                file_obj.seek(0)
+                image = Image.open(file_obj)
+
             except Exception as e:
-                logging.error(f"이미지 변환 실패: {e}")
-                file_obj.close()
+                logging.error(f"❌ 이미지 로딩 실패: {e}")
                 return
 
-            validation_result = self.validation_service.validate(image_np)
-            created_time = datetime.now()
-            file_obj.close()
-
             try:
+                image_np = np.array(image)
+                validation_result = self.validation_service.validate(image_np)
+                created_time = datetime.now(timezone.utc)
+
                 async with AsyncSessionLocal() as session:
-                    created_time = datetime.now()
                     validation_result_orm = ImageValidationResult(
-                        gid=gid,
+                        gid=uuid.UUID(gid),
                         is_blank=validation_result.is_blank,
                         is_folded=False,
                         tilt_angle=0.1,
@@ -146,24 +157,35 @@ class AioConsumer:
                     await session.commit()
                     logging.info("✅ DB에 정보 저장 완료")
 
-                await self.publish_message(
-                    message_body={
-                        "gid": str(gid),
-                        "status": "completed",
-                        "validation_result": asdict(validation_result),
-                        "created_time": str(created_time),
-                    },
+                body = PublishMessagePayload(
+                    gid=gid,
+                    status="success",
+                    completed_at=created_time.isoformat(),
+                    validation_result=asdict(validation_result),
                 )
+                await self.publish_message(trace_id=header.trace_id, body=body)
             except Exception as e:
                 logging.error(f"저장 실패: {e}")
 
-    async def publish_message(self, message_body: dict):
+    async def publish_message(self, trace_id: str, body: PublishMessagePayload):
+        event_id = uuid7str()
+
+        headers = PublishMessageHeader(
+            event_id=event_id,
+            event_type=self.publish_routing_key,
+            trace_id=trace_id,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            source_service="image-validation-worker",
+        )
+        message = aio_pika.Message(
+            body=json.dumps(asdict(body)).encode("utf-8"),
+            headers=asdict(headers),
+            content_type="application/json",
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+        )
+
         await self._publish_exchange.publish(
-            aio_pika.Message(
-                body=json.dumps(message_body).encode(),
-                content_type="application/json",
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            ),
+            message=message,
             routing_key=self.publish_routing_key,
         )
         logging.info(f"📤 메시지 발행 완료: {self.publish_routing_key}")
