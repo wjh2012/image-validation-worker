@@ -12,8 +12,13 @@ class PublishMessageHeader:
 
 
 @dataclass
-class PublishMessagePayload:
+class ValidationServiceData:
+    is_blank: bool
+
+
+@dataclass
+class PublishMessageBody:
     gid: str
-    status: str
+    status: Literal["success", "fail"]
     completed_at: str
-    validation_results: any
+    payload: ValidationServiceData

@@ -15,8 +15,9 @@ from uuid_extensions import uuid7str
 from app.config.env_config import get_settings
 from app.message_queue.consume_message import parse_message
 from app.message_queue.publish_message import (
-    PublishMessagePayload,
+    PublishMessageBody,
     PublishMessageHeader,
+    ValidationServiceData,
 )
 from app.service.validation_service import ValidationService
 from app.storage.aio_boto import AioBoto
@@ -157,17 +158,21 @@ class AioConsumer:
                     await session.commit()
                     logging.info("✅ DB에 정보 저장 완료")
 
-                body = PublishMessagePayload(
+                data = ValidationServiceData(
+                    is_blank=validation_result.is_blank,
+                )
+
+                body = PublishMessageBody(
                     gid=gid,
                     status="success",
-                    completed_at=created_time.isoformat(),
-                    validation_result=asdict(validation_result),
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                    payload=data,
                 )
                 await self.publish_message(trace_id=header.trace_id, body=body)
             except Exception as e:
                 logging.error(f"저장 실패: {e}")
 
-    async def publish_message(self, trace_id: str, body: PublishMessagePayload):
+    async def publish_message(self, trace_id: str, body: PublishMessageBody):
         event_id = uuid7str()
 
         headers = PublishMessageHeader(
