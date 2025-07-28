@@ -1,7 +1,11 @@
 from functools import lru_cache
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
+if os.getenv("RUN_MODE", "develop") == "develop":
+    load_dotenv(dotenv_path=".env")
 
 class Settings(BaseSettings):
     run_mode: str
@@ -26,10 +30,12 @@ class Settings(BaseSettings):
     rabbitmq_image_validation_dlx: str
     rabbitmq_image_validation_dlx_routing_key: str
 
-    model_config = SettingsConfigDict(env_file=".env")
-
     database_url: str
     alembic_database_url: str
+
+    model_config = SettingsConfigDict(
+        env_file=".env" if os.getenv("RUN_MODE", "develop") == "develop" else None
+    )
 
 
 @lru_cache

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 
@@ -18,6 +19,11 @@ config = get_settings()
 
 KST = pytz.timezone("Asia/Seoul")
 
+LOG_FORMAT = (
+    "%(levelname) -10s %(asctime)s %(name) -30s %(funcName) "
+    "-35s %(lineno) -5d: %(message)s"
+)
+LOGGER = logging.getLogger(__name__)
 
 async def main():
     minio = AioBoto()
@@ -60,6 +66,9 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        settings = get_settings()
+        LOGGER.info(f"RUN_MODE: {settings.run_mode}")
+        LOGGER.info(f"RabbitMQ Host: {settings.rabbitmq_host}")
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("프로그램이 종료되었습니다.")
+        LOGGER.info("프로그램이 종료되었습니다.")

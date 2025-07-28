@@ -4,4 +4,5 @@
     <option name="enabledOnSave" value="true" />
     <option name="sdkName" value="Python 3.11 (image-validation-worker)" />
   </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (image-validation-worker)" project-jdk-type="Python SDK" />
 </project>
